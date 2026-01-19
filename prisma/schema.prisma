@@ -1,0 +1,36 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Goal {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  dueDate     DateTime?
+  completed   Boolean  @default(false)
+  positionX   Float    @default(200)
+  positionY   Float    @default(200)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Conexões de saída (esta meta aponta para outras)
+  connectionsFrom Connection[] @relation("FromGoal")
+  // Conexões de entrada (outras metas apontam para esta)
+  connectionsTo   Connection[] @relation("ToGoal")
+}
+
+model Connection {
+  id         String   @id @default(cuid())
+  fromGoalId String
+  toGoalId   String
+  fromGoal   Goal     @relation("FromGoal", fields: [fromGoalId], references: [id], onDelete: Cascade)
+  toGoal     Goal     @relation("ToGoal", fields: [toGoalId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([fromGoalId, toGoalId])
+}
