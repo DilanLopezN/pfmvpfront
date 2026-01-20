@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Goal } from '../types'
 
 interface StarNodeProps {
@@ -9,11 +9,14 @@ interface StarNodeProps {
   isConnecting: boolean
   onSelect: (id: string) => void
   onDragEnd: (id: string, x: number, y: number) => void
+  onDragStateChange: (isDragging: boolean) => void
   onStartConnection: (id: string) => void
   onCompleteConnection: (id: string) => void
   onToggleComplete: (id: string) => void
   onDelete: (id: string) => void
   onOpenDetails: (id: string) => void
+  onArchive: (id: string) => void
+  checkBlackHoleCollision: (x: number, y: number) => boolean
 }
 
 export default function StarNode({
@@ -22,15 +25,20 @@ export default function StarNode({
   isConnecting,
   onSelect,
   onDragEnd,
+  onDragStateChange,
   onStartConnection,
   onCompleteConnection,
   onToggleComplete,
   onDelete,
-  onOpenDetails
+  onOpenDetails,
+  onArchive,
+  checkBlackHoleCollision
 }: StarNodeProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
+  const [isOverBlackHole, setIsOverBlackHole] = useState(false)
+  const currentMousePos = useRef({ x: 0, y: 0 })
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return
@@ -42,6 +50,7 @@ export default function StarNode({
     }
 
     setIsDragging(true)
+    onDragStateChange(true)
     setDragStart({ x: e.clientX, y: e.clientY })
     setDragOffset({
       x: e.clientX - goal.positionX,
@@ -54,13 +63,26 @@ export default function StarNode({
     if (!isDragging) return
 
     const handleMouseMove = (e: MouseEvent) => {
+      currentMousePos.current = { x: e.clientX, y: e.clientY }
       const newX = e.clientX - dragOffset.x
       const newY = e.clientY - dragOffset.y
       onDragEnd(goal.id, newX, newY)
+      setIsOverBlackHole(checkBlackHoleCollision(e.clientX, e.clientY))
     }
 
     const handleMouseUp = (e: MouseEvent) => {
       setIsDragging(false)
+      onDragStateChange(false)
+
+      const isOverBH = checkBlackHoleCollision(e.clientX, e.clientY)
+
+      if (isOverBH) {
+        onArchive(goal.id)
+        setIsOverBlackHole(false)
+        return
+      }
+
+      setIsOverBlackHole(false)
       const dist = Math.sqrt(
         Math.pow(e.clientX - dragStart.x, 2) +
           Math.pow(e.clientY - dragStart.y, 2)
@@ -76,7 +98,17 @@ export default function StarNode({
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [isDragging, dragOffset, dragStart, goal.id, onDragEnd, onOpenDetails])
+  }, [
+    isDragging,
+    dragOffset,
+    dragStart,
+    goal.id,
+    onDragEnd,
+    onOpenDetails,
+    onArchive,
+    onDragStateChange,
+    checkBlackHoleCollision
+  ])
 
   const starPath =
     'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z'
@@ -89,7 +121,9 @@ export default function StarNode({
     <div
       className={`absolute cursor-pointer select-none transition-transform duration-100 ${
         isDragging ? 'scale-110 z-50' : 'z-10'
-      } ${isConnecting ? 'animate-pulse' : ''}`}
+      } ${isConnecting ? 'animate-pulse' : ''} ${
+        isOverBlackHole ? 'opacity-50 scale-75' : ''
+      }`}
       style={{
         left: goal.positionX - 40,
         top: goal.positionY - 40
@@ -102,14 +136,24 @@ export default function StarNode({
           height="80"
           viewBox="0 0 24 24"
           className={`drop-shadow-lg transition-all duration-300 ${
-            goal.completed
-              ? 'fill-emerald-400 stroke-emerald-300'
-              : isSelected
-                ? 'fill-amber-400 stroke-amber-300'
-                : 'fill-violet-500 stroke-violet-300'
+            isOverBlackHole
+              ? 'fill-purple-600 stroke-purple-400'
+              : goal.completed
+                ? 'fill-emerald-400 stroke-emerald-300'
+                : isSelected
+                  ? 'fill-amber-400 stroke-amber-300'
+                  : 'fill-violet-500 stroke-violet-300'
           } ${isConnecting && !isSelected ? 'fill-cyan-400 stroke-cyan-300' : ''}`}
           style={{
-            filter: `drop-shadow(0 0 ${goal.completed ? '12px rgb(52 211 153)' : isSelected ? '15px rgb(251 191 36)' : '8px rgb(139 92 246)'})`
+            filter: `drop-shadow(0 0 ${
+              isOverBlackHole
+                ? '20px rgb(147, 51, 234)'
+                : goal.completed
+                  ? '12px rgb(52 211 153)'
+                  : isSelected
+                    ? '15px rgb(251 191 36)'
+                    : '8px rgb(139 92 246)'
+            })`
           }}
         >
           <path d={starPath} strokeWidth="0.5" />

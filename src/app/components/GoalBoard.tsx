@@ -1,13 +1,15 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 import StarNode from './StarNode'
 import ConnectionLine from './ConnectionLine'
+import BlackHole from './BlackHole'
 import { Connection, Goal } from '../types'
 
 export default function GoalBoard() {
   const [goals, setGoals] = useState<Goal[]>([])
+  const [archivedGoals, setArchivedGoals] = useState<Goal[]>([])
   const [connections, setConnections] = useState<Connection[]>([])
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null)
   const [connectingFromId, setConnectingFromId] = useState<string | null>(null)
@@ -19,14 +21,31 @@ export default function GoalBoard() {
   })
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
   const [detailsGoalId, setDetailsGoalId] = useState<string | null>(null)
+  const [isDraggingAny, setIsDraggingAny] = useState(false)
+  const blackHoleRef = useRef<HTMLDivElement>(null)
+
+  // Função para verificar colisão com buraco negro
+  const checkBlackHoleCollision = useCallback((x: number, y: number) => {
+    if (!blackHoleRef.current) return false
+    const rect = blackHoleRef.current.getBoundingClientRect()
+    const centerX = rect.left + rect.width / 2
+    const centerY = rect.top + rect.height / 2
+    const distance = Math.sqrt(
+      Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2)
+    )
+    return distance < 50
+  }, [])
 
   // Carregar dados
   const fetchData = useCallback(async () => {
-    const [goalsRes, connectionsRes] = await Promise.all([
+    const [goalsRes, archivedRes, connectionsRes] = await Promise.all([
       fetch('/api/goals'),
+      fetch('/api/goals?archived=true'),
       fetch('/api/connections')
     ])
-    setGoals(await goalsRes.json())
+    const allGoals = await archivedRes.json()
+    setGoals((await goalsRes.json()) as Goal[])
+    setArchivedGoals(allGoals.filter((g: Goal) => g.archived))
     setConnections(await connectionsRes.json())
   }, [])
 
@@ -63,12 +82,10 @@ export default function GoalBoard() {
 
   // Atualizar posição
   const handleDragEnd = async (id: string, x: number, y: number) => {
-    // Update local state immediately for smooth UX
     setGoals(prev =>
       prev.map(g => (g.id === id ? { ...g, positionX: x, positionY: y } : g))
     )
 
-    // Debounce API call
     const goal = goals.find(g => g.id === id)
     if (goal) {
       await fetch('/api/goals', {
@@ -92,9 +109,58 @@ export default function GoalBoard() {
     fetchData()
   }
 
-  // Deletar goal
+  // Deletar goal permanentemente
   const handleDeleteGoal = async (id: string) => {
     await fetch(`/api/goals?id=${id}`, { method: 'DELETE' })
+    fetchData()
+  }
+
+  // Arquivar goal (enviar para buraco negro)
+  const handleArchiveGoal = async (id: string) => {
+    const goal = goals.find(g => g.id === id)
+    if (!goal) return
+
+    await fetch('/api/goals', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...goal, archived: true })
+    })
+    fetchData()
+  }
+
+  // Restaurar goal do buraco negro
+  const handleRestoreGoal = async (id: string) => {
+    const goal = archivedGoals.find(g => g.id === id)
+    if (!goal) return
+
+    await fetch('/api/goals', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...goal,
+        archived: false,
+        positionX: 200 + Math.random() * 400,
+        positionY: 200 + Math.random() * 300
+      })
+    })
+    fetchData()
+  }
+
+  // Restaurar goal arrastando do buraco negro
+  const handleDragRestore = async (id: string, x: number, y: number) => {
+    const goal = archivedGoals.find(g => g.id === id)
+    if (!goal) return
+
+    await fetch('/api/goals', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...goal,
+        archived: false,
+        positionX: x,
+        positionY: y
+      })
+    })
     fetchData()
   }
 
@@ -195,11 +261,14 @@ export default function GoalBoard() {
           isConnecting={!!connectingFromId}
           onSelect={setSelectedGoalId}
           onDragEnd={handleDragEnd}
+          onDragStateChange={setIsDraggingAny}
           onStartConnection={handleStartConnection}
           onCompleteConnection={handleCompleteConnection}
           onToggleComplete={handleToggleComplete}
           onDelete={handleDeleteGoal}
           onOpenDetails={setDetailsGoalId}
+          onArchive={handleArchiveGoal}
+          checkBlackHoleCollision={checkBlackHoleCollision}
         />
       ))}
 
@@ -218,6 +287,16 @@ export default function GoalBoard() {
           <span>+ Nova Meta</span>
         </button>
       </div>
+
+      {/* Buraco Negro */}
+      <BlackHole
+        ref={blackHoleRef}
+        isActive={isDraggingAny}
+        archivedGoals={archivedGoals}
+        onRestore={handleRestoreGoal}
+        onDeletePermanently={handleDeleteGoal}
+        onDragRestore={handleDragRestore}
+      />
 
       {/* Legenda */}
       <div className="absolute bottom-6 left-6 flex gap-4 text-sm text-white/60">

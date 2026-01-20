@@ -4,6 +4,7 @@ export interface Goal {
   description: string | null
   dueDate: string | null
   completed: boolean
+  archived: boolean
   positionX: number
   positionY: number
   createdAt: string
